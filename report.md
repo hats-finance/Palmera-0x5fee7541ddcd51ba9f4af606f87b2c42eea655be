@@ -23,9 +23,9 @@ Palmera streamlines your Safes operations and treasury management across multipl
 
 - Type: A public audit competition hosted by Palmera
 - Duration: 2 weeks
-- Maximum Reward: $30,030
+- Maximum Reward: $30,060
 - Submissions: 101
-- Total Payout: $30,030 distributed among 30 participants.
+- Total Payout: $30,060 distributed among 30 participants.
 
 ## Scope of Audit
 
@@ -51,41 +51,49 @@ Note that contracts under the **test**, **script** and lib directories are expli
 ## Medium severity issues
 
 
-- **Non-safe contracts can bypass isSafe checks to use PalmeraModule functions**
+- **Users Can Bypass `isSafe()` Checks Because of Inadequate Verification**
 
-  A vulnerability allows a user to create a custom contract that returns `1` on `getThreshold()` calls, effectively bypassing `isSafe()` restrictions in the `PalmeraModule`. By doing so, these non-safe contracts can register organizations, create root safes, and be added as safes using the `addSafe()` function. The `isSafe()` function, found in `src/Helpers.sol`, checks if an address is a Safe Smart Account Wallet by verifying if the address is a contract and if the threshold is greater than zero. As a result, this vulnerability allows such contracts to execute arbitrary actions and potentially block ownership management operations. It is recommended to implement stricter checks, such as using `ERC165` `supportsInterface()` checks, to ensure contract authenticity.
+  A vulnerability has been identified where a user can create a custom contract that returns `1` on `getThreshold()` calls, allowing them to utilize the `PalmeraModule` functionality improperly. This bypasses `isSafe()` checks, enabling non-safe contracts to register organizations, create root safes, and be added as safes through the `addSafe()` function.
+
+To address this, stricter checks are recommended, such as employing `ERC165` `supportsInterface()` checks, rather than solely verifying if `safe` is a contract and checking its `threshold` in `isSafe()`. This would help prevent unauthorized access and functionality manipulation typically reserved for safe contracts. Additionally, such a safe can disrupt various transactions and ownership management functions, making it challenging to manage or disconnect safely.
 
 
   **Link**: [Issue #24](https://github.com/hats-finance/Palmera-0x5fee7541ddcd51ba9f4af606f87b2c42eea655be/issues/24)
 
 
-- **Exploitable Issue with createRootSafe Allowing Denial of Service on Root Safe Addition**
+- **Exploit Allows Malicious Organizations to Disrupt Safe Creation and Orchestration**
 
-  The current process for creating a rootSafe for an organization allows any address to be provided as `newRootSafe`, without verifying if the user is actually related to it. This poses a significant issue because once `newRootSafe` is registered, it can't be added again by another organization. An attacker could exploit this by registering safes from other organizations, causing a Denial of Service (DoS) that disrupts the composability of the palmera module. The malicious organization can front-run the legitimate `addSafe` calls, effectively bricking safe orchestration. A recommended solution is to verify that `newRootSafe` has agreed to be a root safe for the organization, potentially using a state variable and corresponding method to manage this agreement.
+  When creating a rootSafe for an organization, the current system only checks if the calling address is a valid root safe, and if the provided address is a safe. However, a user can supply any `newRootSafe` address without ensuring they are related to it. This poses a significant issue because once a `newRootSafe` is added, it cannot be reused by another organization. An exploiter can weaponize this by executing a denial-of-service (DoS) attack, preventing the proper orchestration of safes within the Palmera module. For example, a malicious organization can front-run the `addSafe` function, causing honest transactions to revert because the safe would already be registered. The suggested solution is to ensure `newRootSafe` has agreed to be designated as such for the given organization through additional verification mechanisms.
 
 
   **Link**: [Issue #50](https://github.com/hats-finance/Palmera-0x5fee7541ddcd51ba9f4af606f87b2c42eea655be/issues/50)
 
 
-- **Potential Logical Inconsistencies in `addSafe` Function Due to Missing State Check**
+- **addSafe Function Fails to Check Removed State of superSafeId**
 
-  The `addSafe` function lacks a check to determine if the `superSafeId` provided is in a removed state. This could allow a removed safe ID to be incorrectly set as a `superSafeId`, leading to logical inconsistencies and potential security issues within the hierarchical structure of safes. Removed safes should not be reassigned as `superSafeId`. The proposed solution involves adding a check to ensure that `superSafeId` is not in a removed state before proceeding with adding a new safe. There are differing opinions on the validity of this concern, as some believe the issue does not exist since the `addSafe` function verifies if the `superSafeId` is already registered and reverts accordingly.
+  A potential logical inconsistency in the `addSafe` function was raised, highlighting that the function does not validate if the `superSafeId` provided is in a "removed state." This could lead to a removed safe ID being improperly set as a `superSafeId`, compromising the hierarchical integrity and possibly causing security issues. The issue also applies to the `updateSuper` function, which similarly lacks this validation. 
+
+A proposed mitigation is to incorporate a check ensuring that the `superSafeId` is not in a removed state before adding a new safe. 
+
+While some argue that the contract doesn't have a concept of a "removed state," others insist the issue is valid and needs verification to maintain the integrity of the safe hierarchy.
 
 
   **Link**: [Issue #52](https://github.com/hats-finance/Palmera-0x5fee7541ddcd51ba9f4af606f87b2c42eea655be/issues/52)
 
 
-- **Potential Denial of Service in `_exitSafe` Function Due to Module Disabling**
+- **Denial of Service Issue in `_exitSafe` Due to Inadequate `disableModule` Handling**
 
-  The `_exitSafe` function includes a check for `getPreviewModule(caller)` and reverts if it returns `address(0)`, which can lead to a Denial of Service (DoS) issue. This occurs because users can call the `disableModule` function on their own, causing subsequent calls to `_exitSafe` to fail. This vulnerability impacts the `removeWholeTree` and `disconnectSafe` functions, and if `disableModule` has been called by the user, it will result in a failure of `_exitSafe`, preventing the proper execution of these critical functions and potentially leading to Protocol insolvency. Mitigation includes updating `_exitSafe` to handle cases where `prevModule` is `address(0)` to avoid unnecessary reversion and ensure continuation even if the module has already been disabled.
+  The `_exitSafe` function includes a check for `getPreviewModule(caller)` and reverts if it returns `address(0)`, leading to a potential Denial of Service (DoS) vulnerability. Users can call `disableModule` on their own, causing subsequent calls to `_exitSafe` to fail. This flaw affects the `removeWholeTree` and `disconnectSafe` functions. If `disableModule` has been invoked by the user, `_exitSafe` fails and disrupts these functions, potentially causing Protocol insolvency.
+
+To reproduce the issue, a test case was suggested involving the function `test_test`. The proposed solution is to modify `_exitSafe` to handle cases where `prevModule` equals `address(0)`, ensuring the function proceeds without reverting unnecessarily. The debate continues on whether this issue and the provided mitigation correctly address the concern, with some arguing the function should rightfully revert.
 
 
   **Link**: [Issue #55](https://github.com/hats-finance/Palmera-0x5fee7541ddcd51ba9f4af606f87b2c42eea655be/issues/55)
 
 
-- **Root Safe Does Not Call disableSafeLeadRoles in removeWholeTree Function**
+- **Conflict Over Root Safe Disabling in removeWholeTree Function**
 
-  In the `removeWholeTree` function, the `disableSafeLeadRoles` function is called for all safes except the root safe. This can result in issues if the root safe becomes a member of another organization, leading to unexpected behavior and potential security risks as the root safe retains roles it should have been disabled. It's suggested to call `disableSafeLeadRoles` for the root safe to mitigate this. However, it's argued that the root safe is effectively removed by the `_exitSafe(rootSafe)` function at the end, which calls `removeIndexSafe` and deletes the safe from the organization, rendering the issue invalid. The debate remains whether the omission of `disableSafeLeadRoles` specifically hinders proper removal of the root safe's roles.
+  In the `removeWholeTree` function, there is a missing call to `disableSafeLeadRoles` for the root safe, unlike the other safes where this function is correctly invoked. This oversight can cause issues if the root safe joins another organization, potentially leading to unexpected behavior and security vulnerabilities due to retained roles that should have been disabled. To address this, the suggested fix involves modifying the code to include a call to `disableSafeLeadRoles` for the root safe as well. However, there is a debate: some argue that the current implementation, which calls `_exitSafe` for the root safe, sufficient removes it, rendering the reported issue invalid. Further verification and testing are needed to confirm the correct behavior.
 
 
   **Link**: [Issue #72](https://github.com/hats-finance/Palmera-0x5fee7541ddcd51ba9f4af606f87b2c42eea655be/issues/72)
@@ -93,41 +101,41 @@ Note that contracts under the **test**, **script** and lib directories are expli
 ## Low severity issues
 
 
-- **Incorrect PALMERA_TX_TYPEHASH Calculation in Constants Contract Breaking EIP-721**
+- **Incorrect Calculation of `PALMERA_TX_TYPEHASH` in Constants Contract**
 
-  The `PALMERA_TX_TYPEHASH` constant in the `Constants` contract is incorrectly calculated, breaking EIP-712. As a result, encoded transaction data for Palmera transactions are produced incorrectly, causing transaction hashes to be returned incorrectly and making signature verification non-compliant. This requires a manual fix for correct interoperability.
+  The constant `PALMERA_TX_TYPEHASH` in the contract **Constants** has been incorrectly calculated, breaking compliance with [EIP-721](https://eips.ethereum.org/EIPS/eip-712). The correct `keccak256` hash should be `0x33d86b91ace2c23c833e6a968f94ce2cdabd89ed7375f3d2135aa0f5a9c131b5` instead of the current incorrect value.
 
 
   **Link**: [Issue #1](https://github.com/hats-finance/Palmera-0x5fee7541ddcd51ba9f4af606f87b2c42eea655be/issues/1)
 
 
-- **Enum.Type Cannot Be Used in EIP-712 Hash Leading to Incorrect Hash Calculation**
+- **Incorrect Use of Enum.Operation in EIP-712 Hash Calculation**
 
-  The description highlights a problem with the use of `Enum.Operation` in EIP-712 hashing. Enums are derived from `uint`, and using them directly in hashing could result in incorrect hashes. It is recommended to use `uint8` instead. There's some debate about its severity and relevance to core contracts.
+  Enum.Operation is not a standard type and should not be used in EIP-712 hashes. Instead, uint should be used because enums are derived from uint. Using Enum.Operation will result in an incorrect hash. A proof of concept demonstrates this through a provided function.
 
 
   **Link**: [Issue #11](https://github.com/hats-finance/Palmera-0x5fee7541ddcd51ba9f4af606f87b2c42eea655be/issues/11)
 
 
-- **Replace Deprecated `this` with `address(this)` in domainSeparator Function**
+- **Replace deprecated `this` with `address(this)` in domainSeparator function**
 
-  In `Helpers.sol`, the `domainSeparator()` function uses the deprecated `this` keyword. Although the contracts use Solidity 0.8.23, it's recommended to replace `this` with `address(this)` to prevent unexpected behavior. The proposed fix involves updating the code to align with best practices and avoid deprecated variables.
+  In `Helpers.sol`, the `domainSeparator()` function uses the deprecated `this` keyword, which can lead to unexpected behavior in Solidity version 0.8.23. It is recommended to replace `this` with `address(this)` to avoid issues and use current best practices.
 
 
   **Link**: [Issue #28](https://github.com/hats-finance/Palmera-0x5fee7541ddcd51ba9f4af606f87b2c42eea655be/issues/28)
 
 
-- **Delegatecall Vulnerability in execTransactionOnBehalf Function Allows Safe Destruction**
+- **Vulnerability in `execTransactionOnBehalf` Function Allows Destruction of `targetSafe` Contract**
 
-  The `execTransactionOnBehalf` function in the `PalmeraModule` contract has a vulnerability when executing transactions using the `DelegateCall` operation. If the `to` address is a malicious contract, it can execute a selfdestruct operation, causing the targetSafe contract to be destroyed. This can disrupt the organization by breaking contract modules and halting all transactions.
+  The `execTransactionOnBehalf` function in the `PalmeraModule` contract allows specific roles to execute transactions. However, if the `to` address in the transaction is malicious, it can exploit the function using a `delegatecall` to execute a `selfdestruct` operation. This can lead to the destruction of the `targetSafe` contract, disrupting the organization by breaking contract modules and halting transactions. To mitigate this, additional checks should be added to verify that the `to` address is not malicious, specifically avoiding the use of `delegatecall` with untrusted addresses.
 
 
   **Link**: [Issue #61](https://github.com/hats-finance/Palmera-0x5fee7541ddcd51ba9f4af606f87b2c42eea655be/issues/61)
 
 
-- **Root Safe Not Revoking Super Safe Role During `removeWholeTree()` Operation**
+- **Issue with Promoting and Removing Root Safes without Revoking Super Safe Role**
 
-  After a root safe is removed from an organization, its roles should be revoked. However, if a root safe previously promoted from a super safe still retains the super safe role, this role is not revoked during removal. Consequently, if the safe joins a new organization, it unfairly retains the super safe role without any children. The correct solution is to revoke the super safe role before the root safe exits.
+  There is a design oversight where the super safe role of a root safe is not being revoked upon removal, leading to potential security issues. After the entire tree of safes is removed, a promoted safe retains its super safe role, which could be exploited when re-added to a new organization. The correct fix suggested is to revoke the super safe role before exiting.
 
 
   **Link**: [Issue #92](https://github.com/hats-finance/Palmera-0x5fee7541ddcd51ba9f4af606f87b2c42eea655be/issues/92)
@@ -136,7 +144,7 @@ Note that contracts under the **test**, **script** and lib directories are expli
 
 ## Conclusion
 
-The Hats.finance audit competition for Palmera, which lasted two weeks, uncovered critical and moderate vulnerabilities. During this public audit, 30 participants shared $30,030 from a $30,030 reward pool. The audit's scope included multiple smart contract files but excluded test, script, and library directories. Notable findings included issues such as bypassing the `isSafe` check, enabling non-safe contracts to misuse functions, and logical inconsistencies that could cause DoS attacks. Recommended fixes include tighter contract checks and enhanced state handling. Several low severity issues, like EIP-712 non-compliance and improper use of delegatecall, also emerged. Hats.finance’s audit competition proved successful in identifying vulnerabilities efficiently and affordably by leveraging a decentralized, results-driven approach, aligning with its mission to achieve robust decentralized security for Web3 projects.
+The Hats.finance audit competition on Palmera identified several medium and low-severity security issues that need resolution to secure the protocol effectively. Among the key medium-severity issues were vulnerabilities allowing users to bypass safety checks, execute denial-of-service (DoS) attacks, and misuse removed states in the safe hierarchy. Other significant problems involved handling of the `disableModule` function, which could lead to a DoS, and inadequate role disabling that could compromise security when safes join different organizations. Low-severity issues included incorrect hash calculations, improper use of enumerations in EIP-712, deprecated keyword usage, potential contract destruction through malicious delegate calls, and oversight in revoking roles for root safes. The Palmera audit competition, employing decentralized methods with rewards based on vulnerability identification, proved to be effective, culminating in a total payout of $30,060. The competition underscores the importance of thorough and innovative security audits in fostering a safer Web3 ecosystem.
 
 ## Disclaimer
 
